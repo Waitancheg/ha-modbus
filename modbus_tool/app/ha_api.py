@@ -14,26 +14,19 @@ class HaError(Exception):
 
 class HubControl:
     def __init__(self):
-        self.released = False
+        # manual: user pressed «Освободить хаб» and the session stays stopped.
+        self.manual = False
         self.last = None
 
     def stop(self, hub: str) -> dict:
         result = self._service("stop", {"hub": hub})
-        self.released = True
         self.last = result
         return result
 
-    def restart(self, hub: str) -> dict:
-        try:
-            result = self._service("restart", {"hub": hub})
-        except HaError as exc:
-            if exc.status not in (400, 404, 500):
-                raise
-            # HA 2024.11 removed modbus.restart. reload reopens every hub.
-            result = self._service("reload", {})
-            result["fallback"] = "modbus.restart недоступен, вызван modbus.reload"
-            result["restart_error"] = str(exc)
-        self.released = False
+    def reload(self) -> dict:
+        # modbus.restart was removed in Home Assistant 2024.11.
+        result = self._service("reload", {})
+        self.manual = False
         self.last = result
         return result
 

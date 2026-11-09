@@ -17,64 +17,81 @@ points:
   - name: Реле 1
     kind: coil
     address: 0
+    channel: 1
     export: switch
   - name: Реле 2
     kind: coil
     address: 1
+    channel: 2
     export: switch
   - name: Реле 3
     kind: coil
     address: 2
+    channel: 3
     export: switch
   - name: Реле 4
     kind: coil
     address: 3
+    channel: 4
     export: switch
   - name: Реле 5
     kind: coil
     address: 4
+    channel: 5
     export: switch
   - name: Реле 6
     kind: coil
     address: 5
+    channel: 6
     export: switch
   - name: Реле 7
     kind: coil
     address: 6
+    channel: 7
     export: switch
   - name: Реле 8
     kind: coil
     address: 7
+    channel: 8
     export: switch
   - name: Вход 1
     kind: discrete
     address: 0
+    channel: 1
     export: binary_sensor
     slave_count: 7
   - name: Вход 2
     kind: discrete
     address: 1
+    channel: 2
   - name: Вход 3
     kind: discrete
     address: 2
+    channel: 3
   - name: Вход 4
     kind: discrete
     address: 3
+    channel: 4
   - name: Вход 5
     kind: discrete
     address: 4
+    channel: 5
   - name: Вход 6
     kind: discrete
     address: 5
+    channel: 6
   - name: Вход 7
     kind: discrete
     address: 6
+    channel: 7
   - name: Вход 8
     kind: discrete
     address: 7
+    channel: 8
   - name: Реле 1 режим
     kind: holding
     address: 3
+    channel: 1
     decode: uint16
     export: sensor
     enum:
@@ -83,39 +100,46 @@ points:
   - name: Реле 1 время
     kind: holding
     address: 4
+    channel: 1
     decode: uint16
     unit: "×100 мс"
     export: sensor
   - name: Реле 2 режим
     kind: holding
     address: 8
+    channel: 2
     decode: uint16
     export: sensor
   - name: Реле 2 время
     kind: holding
     address: 9
+    channel: 2
     decode: uint16
     unit: "×100 мс"
     export: sensor
   - name: Реле 3 режим
     kind: holding
     address: 13
+    channel: 3
     decode: uint16
     export: sensor
   - name: Реле 3 время
     kind: holding
     address: 14
+    channel: 3
     decode: uint16
     unit: "×100 мс"
     export: sensor
   - name: Реле 4 режим
     kind: holding
     address: 18
+    channel: 4
     decode: uint16
     export: sensor
   - name: Реле 4 время
     kind: holding
     address: 19
+    channel: 4
     decode: uint16
     unit: "×100 мс"
     export: sensor

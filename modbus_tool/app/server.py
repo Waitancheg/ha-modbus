@@ -15,6 +15,7 @@ from app.bus import BAUDS, Bus, list_serial_ports
 from app.ha_api import HaError, HubControl
 from app.profiles import decode_read, load_profiles, profile_by_id, public_profile
 from app.rtu import (
+    PROBE_PLAN,
     READ_FC,
     append_crc,
     build_broadcast_address,
@@ -23,7 +24,6 @@ from app.rtu import (
     build_write_coils,
     build_write_register,
     build_write_registers,
-    crc_ok,
     hex_bytes,
     parse_hex,
     probe_device,
@@ -43,13 +43,79 @@ def _log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def load_options() -> dict:
-    path = os.environ.get("OPTIONS_PATH", "/data/options.json")
-    if not os.path.isfile(path):
+def _read_json_file(path: str) -> dict:
+    if not path or not os.path.isfile(path):
         return {}
-    with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
     return data if isinstance(data, dict) else {}
+
+
+def load_options() -> dict:
+    return _read_json_file(os.environ.get("OPTIONS_PATH", "/data/options.json"))
+
+
+def settings_path() -> str:
+    return os.environ.get("SETTINGS_PATH", "/data/settings.json")
+
+
+def load_saved() -> dict:
+    return _read_json_file(settings_path())
+
+
+def save_settings(settings: dict) -> None:
+    path = settings_path()
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        temporary = path + ".tmp"
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(settings, handle, ensure_ascii=False, indent=2)
+        os.replace(temporary, path)
+    except OSError as exc:
+        _log(f"не удалось сохранить настройки: {exc}")
+
+
+def _clean_scan(raw: dict | None) -> dict:
+    src = raw or {}
+    start = int(src.get("address_from") or 1)
+    end = int(src.get("address_to") or 255)
+    start = min(255, max(1, start))
+    end = min(255, max(start, end))
+    bauds = []
+    for item in src.get("bauds") or [9600]:
+        baud = int(item)
+        if baud not in BAUDS:
+            raise ValueError("скорость скана не из списка")
+        if baud not in bauds:
+            bauds.append(baud)
+    parities = []
+    for item in src.get("parities") or ["N"]:
+        parity = str(item).upper()
+        if parity not in ("N", "E", "O"):
+            raise ValueError("чётность скана: N, E или O")
+        if parity not in parities:
+            parities.append(parity)
+    probes = []
+    for item in src.get("probes") or [3, 1, 2]:
+        function = int(item)
+        if function not in (1, 2, 3):
+            raise ValueError("опрос: FC01, FC02 или FC03")
+        if function not in probes:
+            probes.append(function)
+    if not probes:
+        raise ValueError("выберите хотя бы одну функцию опроса")
+    return {
+        "address_from": start,
+        "address_to": end,
+        "bauds": bauds,
+        "parities": parities,
+        "probes": probes,
+    }
 
 
 def _clean_settings(raw: dict, base: dict | None = None) -> dict:
@@ -64,49 +130,70 @@ def _clean_settings(raw: dict, base: dict | None = None) -> dict:
     stopbits = int(src.get("stopbits") or 1)
     if stopbits not in (1, 2):
         raise ValueError("стоп-биты: 1 или 2")
+    bytesize = int(src.get("bytesize") or 8)
+    if bytesize not in (5, 6, 7, 8):
+        raise ValueError("биты данных: 5, 6, 7 или 8")
     device = str(src.get("device") or "").strip()
     if not device.startswith("/dev/"):
         raise ValueError("устройство должно быть путём /dev/…")
     timeout = float(src.get("timeout") if src.get("timeout") is not None else 0.25)
     gap = float(src.get("inter_frame_delay") or 0)
     echo = float(src.get("echo_guard") if src.get("echo_guard") is not None else 0.005)
+    retries = int(src.get("retries") or 0)
     if not 0.05 <= timeout <= 10:
         raise ValueError("таймаут 0.05…10 с")
     if not 0 <= gap <= 2:
         raise ValueError("пауза между кадрами 0…2 с")
     if not 0 <= echo <= 0.2:
         raise ValueError("порог эха 0…0.2 с")
+    if not 0 <= retries <= 5:
+        raise ValueError("повторы 0…5")
+    scan_src = src.get("scan") if isinstance(src.get("scan"), dict) else {}
+    if raw and isinstance(raw.get("scan"), dict):
+        scan_src = raw["scan"]
     return {
         "device": device,
         "baudrate": baud,
         "parity": parity,
         "stopbits": stopbits,
+        "bytesize": bytesize,
         "timeout": timeout,
         "inter_frame_delay": gap,
         "echo_guard": echo,
+        "retries": retries,
         "hub_name": str(src.get("hub_name") or "").strip(),
-        "auto_release_hub": bool(src.get("auto_release_hub", True)),
+        "ha_not_using_port": bool(src.get("ha_not_using_port", False)),
+        "scan": _clean_scan(scan_src),
     }
 
 
 class App:
     def __init__(self):
-        self.settings = _clean_settings(load_options(), {
+        defaults = {
             "device": "/dev/ttyUSB0",
             "baudrate": 9600,
             "parity": "N",
             "stopbits": 1,
+            "bytesize": 8,
             "timeout": 0.25,
             "inter_frame_delay": 0,
             "echo_guard": 0.005,
+            "retries": 0,
             "hub_name": "",
-            "auto_release_hub": True,
-        })
+            "ha_not_using_port": False,
+        }
+        # Addon options are the first-run defaults. The panel file wins after that.
+        initial = dict(load_options())
+        initial.update(load_saved())
+        self.settings = _clean_settings(initial, defaults)
         self.bus = Bus()
         self.hub = HubControl()
         self.profiles = load_profiles()
         self.pending = {}
         self._scan_lock = threading.Lock()
+        self._hub_lock = threading.Lock()
+        self._inflight = 0
+        self._auto_held = False
         self.scan = self._empty_scan()
 
     def _empty_scan(self) -> dict:
@@ -145,33 +232,83 @@ class App:
     def _hub_name(self) -> str:
         return (self.settings.get("hub_name") or "").strip()
 
+    def _ensure_port_policy(self) -> None:
+        if self._hub_name() or self.settings.get("ha_not_using_port"):
+            return
+        raise HaError("Укажите имя хаба или отметьте «HA не использует этот порт»")
+
+    def port_view(self) -> dict:
+        path = self.settings["device"]
+        return {"path": path, "exists": os.path.exists(path)}
+
+    def hub_view(self) -> dict:
+        name = self._hub_name()
+        if self.hub.manual and name:
+            mode, label = "session", f"сессия: хаб «{name}» остановлен"
+        elif name:
+            mode, label = "auto", f"авто: «{name}» — stop перед операцией, reload после"
+        elif self.settings.get("ha_not_using_port"):
+            mode, label = "unused", "HA не использует этот порт"
+        else:
+            mode, label = "blocked", "нет хаба — операции запрещены"
+        return {
+            "name": name,
+            "mode": mode,
+            "label": label,
+            "manual": self.hub.manual,
+            "supervisor": bool(os.environ.get("SUPERVISOR_TOKEN")),
+            "last": self.hub.last,
+        }
+
+    def apply_settings(self, raw: dict) -> dict:
+        self.settings = _clean_settings(raw, self.settings)
+        save_settings(self.settings)
+        return self.settings
+
     def release_hub(self) -> dict:
         name = self._hub_name()
         if not name:
             raise HaError("укажите имя хаба Modbus")
-        _log(f"modbus.stop hub={name}")
-        return self.hub.stop(name)
+        with self._hub_lock:
+            _log(f"modbus.stop hub={name}")
+            result = self.hub.stop(name)
+            self.hub.manual = True
+            self._auto_held = False
+            return result
 
     def restore_hub(self) -> dict:
         name = self._hub_name()
         if not name:
             raise HaError("укажите имя хаба Modbus")
-        _log(f"restore hub={name}")
-        return self.hub.restart(name)
+        with self._hub_lock:
+            _log(f"modbus.reload hub={name}")
+            self.hub.manual = False
+            self._auto_held = False
+            return self.hub.reload()
 
     def _with_hub(self, action):
+        self._ensure_port_policy()
         name = self._hub_name()
-        auto = bool(self.settings.get("auto_release_hub")) and bool(name) and not self.hub.released
-        if auto:
-            self.release_hub()
+        with self._hub_lock:
+            if name and not self.hub.manual and self._inflight == 0:
+                _log(f"modbus.stop hub={name}")
+                self.hub.stop(name)
+                self._auto_held = True
+            self._inflight += 1
         try:
             return action()
         finally:
-            if auto:
-                try:
-                    self.restore_hub()
-                except HaError as exc:
-                    raise HaError(f"операция на шине завершилась, хаб не восстановлен: {exc}") from exc
+            with self._hub_lock:
+                self._inflight -= 1
+                if self._inflight == 0 and self._auto_held and not self.hub.manual:
+                    self._auto_held = False
+                    try:
+                        _log("modbus.reload")
+                        self.hub.reload()
+                    except HaError as exc:
+                        raise HaError(f"операция на шине завершилась, хаб не восстановлен: {exc}") from exc
+                elif self._inflight == 0 and self.hub.manual:
+                    self._auto_held = False
 
     def _busy(self) -> None:
         if self.scan["running"]:
@@ -231,20 +368,22 @@ class App:
             raise ValueError("функция записи: 5, 6, 15 или 16")
         return self._remember(frame, summary)
 
+    def _exchange(self, frame: bytes, summary: str = "", note: str = "") -> dict:
+        result = self.bus.transact(frame, self.settings, keep_open=False)
+        result["tx"] = hex_bytes(frame)
+        result["summary"] = summary
+        public = _public_exchange(result)
+        if note:
+            public["note"] = note if not public.get("note") else f"{note}. {public['note']}"
+        return public
+
     def commit_write(self, token: str) -> dict:
         self._busy()
         item = self.pending.pop(token, None)
         if not item or item["exp"] < time.time():
             raise ValueError("подтверждение устарело, подготовьте кадр ещё раз")
         frame = item["frame"]
-
-        def run():
-            result = self.bus.transact(frame, self.settings, keep_open=False)
-            result["tx"] = hex_bytes(frame)
-            result["summary"] = item["summary"]
-            return _public_exchange(result)
-
-        return self._with_hub(run)
+        return self._with_hub(lambda: self._exchange(frame, item["summary"], item.get("note") or ""))
 
     def read(self, body: dict) -> dict:
         self._busy()
@@ -272,19 +411,24 @@ class App:
         return self._with_hub(run)
 
     def raw(self, body: dict) -> dict:
-        self._busy()
         payload = parse_hex(body.get("hex") or "")
-        frame = append_crc(payload) if body.get("append_crc", True) else payload
-        if body.get("append_crc", True) is False and len(frame) >= 4 and not crc_ok(frame):
-            pass
-        note = "CRC16 добавлен" if body.get("append_crc", True) else "CRC не добавлялся"
+        appended = bool(body.get("append_crc", True))
+        frame = append_crc(payload) if appended else payload
+        if len(frame) < 2:
+            raise ValueError("кадр короче 2 байт")
+        slave, function = frame[0], frame[1]
+        note = "CRC16 добавлен" if appended else "CRC не добавлялся"
+        if slave == 0 or function not in READ_FC:
+            summary = f"HEX, устройство {slave}, функция {function:02X}"
+            if slave == 0:
+                summary = "Broadcast. " + summary
+            remembered = self._remember(frame, summary)
+            remembered["note"] = note
+            return remembered
+        self._busy()
 
         def run():
-            result = self.bus.transact(frame, self.settings, keep_open=False)
-            result["tx"] = hex_bytes(frame)
-            public = _public_exchange(result)
-            public["note"] = note if not public.get("note") else f"{note}. {public['note']}"
-            return public
+            return self._exchange(frame, note=note)
 
         return self._with_hub(run)
 
@@ -334,15 +478,15 @@ class App:
             return self.build_write(payload)
         raise ValueError("неизвестное действие")
 
-    def start_scan(self, body: dict) -> dict:
-        start = int(body.get("address_from"))
-        end = int(body.get("address_to"))
-        if not 1 <= start <= 255 or not 1 <= end <= 255 or end < start:
-            raise ValueError("диапазон адресов 1..255, включая 255")
-        bauds = [int(item) for item in body.get("bauds") or []]
-        if not bauds or any(item not in BAUDS for item in bauds):
-            raise ValueError("выберите скорость из списка")
-        addresses = list(range(start, end + 1))
+    def start_scan(self, body: dict | None = None) -> dict:
+        self._ensure_port_policy()
+        scan = _clean_scan(body or self.settings.get("scan"))
+        self.settings["scan"] = scan
+        save_settings(self.settings)
+        addresses = list(range(scan["address_from"], scan["address_to"] + 1))
+        bauds = scan["bauds"]
+        parities = scan["parities"]
+        probes = [item for item in PROBE_PLAN if item[0] in scan["probes"]]
         with self._scan_lock:
             if self.scan["running"]:
                 raise ValueError("сканирование уже идёт")
@@ -351,7 +495,7 @@ class App:
                 "running": True,
                 "cancel": cancel,
                 "done": 0,
-                "total": len(addresses) * len(bauds),
+                "total": len(addresses) * len(bauds) * len(parities),
                 "current": None,
                 "found": [],
                 "error": None,
@@ -362,27 +506,34 @@ class App:
             def run():
                 try:
                     for baud in bauds:
-                        settings = dict(self.settings)
-                        settings["baudrate"] = baud
-                        for address in addresses:
-                            if cancel.is_set():
+                        for parity in parities:
+                            tuned = dict(self.settings)
+                            tuned["baudrate"] = baud
+                            tuned["parity"] = parity
+                            for address in addresses:
+                                if cancel.is_set():
+                                    with self._scan_lock:
+                                        self.scan["error"] = "остановлено"
+                                    return
                                 with self._scan_lock:
-                                    self.scan["error"] = "остановлено"
-                                return
-                            with self._scan_lock:
-                                self.scan["current"] = {"address": address, "baudrate": baud}
+                                    self.scan["current"] = {
+                                        "address": address,
+                                        "baudrate": baud,
+                                        "parity": parity,
+                                    }
 
-                            def transact(frame, settings=settings):
-                                if frame[1] not in READ_FC:
-                                    raise RuntimeError("сканирование пыталось записать на шину")
-                                return self.bus.transact(frame, settings, keep_open=True)
+                                def transact(frame, tuned=tuned):
+                                    if frame[1] not in READ_FC:
+                                        raise RuntimeError("сканирование пыталось записать на шину")
+                                    return self.bus.transact(frame, tuned, keep_open=True)
 
-                            found = probe_device(transact, address)
-                            with self._scan_lock:
-                                self.scan["done"] += 1
-                                if found["present"]:
-                                    found["baudrate"] = baud
-                                    self.scan["found"].append(found)
+                                found = probe_device(transact, address, probes)
+                                with self._scan_lock:
+                                    self.scan["done"] += 1
+                                    if found["present"]:
+                                        found["baudrate"] = baud
+                                        found["parity"] = parity
+                                        self.scan["found"].append(found)
                 finally:
                     self.bus.close()
 
@@ -409,7 +560,11 @@ class App:
 def _public_exchange(result: dict) -> dict:
     parsed = result.get("parsed")
     note = ""
-    if result.get("timeout") and not result.get("raw"):
+    if result.get("broadcast"):
+        note = "отправлено (broadcast, ответ не ожидается)"
+        if result.get("raw"):
+            note += ". Принятые байты показаны ниже"
+    elif result.get("timeout") and not result.get("raw"):
         note = "нет ответа"
     elif result.get("echo") and not result.get("frame"):
         note = "только локальное эхо, ответа устройства нет"
@@ -511,11 +666,8 @@ class Handler(BaseHTTPRequestHandler):
                     "gap": APP.bus.effective_gap(APP.settings),
                     "ports": list_serial_ports(),
                     "bauds": list(BAUDS),
-                    "hub": {
-                        "released": APP.hub.released,
-                        "last": APP.hub.last,
-                        "supervisor": bool(os.environ.get("SUPERVISOR_TOKEN")),
-                    },
+                    "port": APP.port_view(),
+                    "hub": APP.hub_view(),
                     "profiles": [
                         {
                             "id": item["id"],
@@ -545,8 +697,14 @@ class Handler(BaseHTTPRequestHandler):
             path = urlparse(self.path).path
             body = self._read_json()
             if path == "/api/settings":
-                APP.settings = _clean_settings(body, APP.settings)
-                self._json(200, {"ok": True, "settings": APP.settings, "gap": APP.bus.effective_gap(APP.settings)})
+                APP.apply_settings(body)
+                self._json(200, {
+                    "ok": True,
+                    "settings": APP.settings,
+                    "gap": APP.bus.effective_gap(APP.settings),
+                    "port": APP.port_view(),
+                    "hub": APP.hub_view(),
+                })
                 return
             if path == "/api/hub/release":
                 self._json(200, {"ok": True, "result": APP.release_hub()})
@@ -564,7 +722,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, APP.read(body))
                 return
             if path == "/api/raw":
-                self._json(200, APP.raw(body))
+                result = APP.raw(body)
+                if "token" in result:
+                    self._json(200, {"ok": True, "preview": result})
+                else:
+                    self._json(200, result)
                 return
             if path == "/api/write/preview":
                 self._json(200, {"ok": True, "preview": APP.build_write(body)})
@@ -587,7 +749,10 @@ class Handler(BaseHTTPRequestHandler):
                     "baudrate": body.get("baudrate") or APP.settings["baudrate"],
                     "parity": APP.settings["parity"],
                     "stopbits": APP.settings["stopbits"],
+                    "bytesize": APP.settings.get("bytesize") or 8,
                     "address": int(body.get("address")),
+                    "full_hub": bool(body.get("full_hub")),
+                    "channels": body.get("channels"),
                 }
                 self._json(200, {"ok": True, "yaml": generate_yaml(profile, settings)})
                 return

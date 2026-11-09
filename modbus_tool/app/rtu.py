@@ -229,13 +229,12 @@ def extract_response(
     first_byte_delay: float | None = None,
     echo_guard: float = 0.005,
 ) -> dict:
-    """Drop a USB-RS485 echo of the request and return the device frame.
+    """Drop a USB-RS485 echo only when those bytes equal the sent frame.
 
-    A read reply never equals the request, so one copy of a read is echo.
-    A write reply repeats the request. One copy is the device when it arrives
-    slower than echo_guard; faster than that is the adapter looping TX into RX.
-    Two copies are echo plus the real reply. echo_guard <= 0 disables the
-    timing test (a single write copy is kept).
+    Timing is not enough: a fast buffer that is not a copy of the request is
+    kept. A read reply never equals the request, so one identical copy is echo.
+    A write reply repeats the request, so one identical copy is echo only when
+    it arrives faster than echo_guard; two copies are echo plus the reply.
     """
     empty = {
         "frame": None,
@@ -286,10 +285,10 @@ def extract_response(
     }
 
 
-def probe_device(transact, address: int) -> dict:
+def probe_device(transact, address: int, plan=None) -> dict:
     """Read-only presence check. An exception response counts as present."""
     attempts = []
-    for function, start, quantity in PROBE_PLAN:
+    for function, start, quantity in (plan or PROBE_PLAN):
         frame = build_read(address, function, start, quantity)
         if frame[1] not in READ_FC:
             raise RuntimeError("сканирование пыталось записать на шину")
@@ -318,7 +317,7 @@ def probe_device(transact, address: int) -> dict:
     return {"present": False, "address": address, "attempts": attempts}
 
 
-def auto_gap(baud: int, parity: str, stopbits: int) -> float:
-    bits = 1 + 8 + (0 if parity == "N" else 1) + int(stopbits)
+def auto_gap(baud: int, parity: str, stopbits: int, bytesize: int = 8) -> float:
+    bits = 1 + int(bytesize) + (0 if parity == "N" else 1) + int(stopbits)
     # USB-UART вставляет паузы длиннее спецификации RTU (3.5 символа) и рвёт кадр.
     return max((bits / float(baud)) * 3.5, 0.015)

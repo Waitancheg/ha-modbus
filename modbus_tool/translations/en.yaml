@@ -1,32 +1,28 @@
 configuration:
   hub_name:
     name: Modbus hub name
-    description: >-
-      Name from configuration.yaml. The add-on calls modbus.stop before using
-      the bus and modbus.restart afterwards. Leave empty to skip.
+    description: Initial value only. The panel stores later changes in /data/settings.json.
   device:
     name: Serial port
-    description: For example /dev/ttyUSB0 or /dev/serial/by-id/usb-…
+    description: Initial path, for example /dev/ttyUSB0.
   baudrate:
     name: Baud rate
-    description: Default port speed.
+    description: Initial port speed.
   parity:
     name: Parity
-    description: N none, E even, O odd.
+    description: Initial value, N, E or O.
   stopbits:
     name: Stop bits
-    description: Usually 1 (8N1).
+    description: Initial value, usually 1.
+  bytesize:
+    name: Data bits
+    description: Initial value, usually 8 for Modbus RTU.
   timeout:
     name: Response timeout, s
-    description: How long to wait for a device reply.
+    description: Initial timeout. The panel applies changes immediately.
   inter_frame_delay:
     name: Inter-frame gap, s
-    description: 0 uses at least 3.5 character times and 15 ms, because USB-UART pauses can split a shorter frame.
-  echo_guard:
-    name: Local echo guard, s
-    description: >-
-      A copy of the request that arrives faster than this is treated as adapter
-      echo and dropped. 0 disables the timing check for writes.
-  auto_release_hub:
-    name: Release HA hub automatically
-    description: Call modbus.stop before bus access and modbus.restart after.
+    description: 0 uses at least 3.5 character times and 15 ms.
+  retries:
+    name: Retries
+    description: Extra attempts when no reply arrives. 0 means a single try.

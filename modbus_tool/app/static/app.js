@@ -2,6 +2,8 @@ const $ = (id) => document.getElementById(id);
 let profiles = [];
 let previewToken = null;
 let scanTimer = null;
+let saveTimer = null;
+let hydrating = false;
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -36,51 +38,111 @@ function post(path, body) {
   });
 }
 
-function settingsPayload() {
+function checkedValues(root) {
+  return [...root.querySelectorAll("input:checked")].map((node) => node.value);
+}
+
+function collect() {
   return {
-    device: $("device").value.trim(),
+    device: $("device").value,
     baudrate: Number($("baud").value),
     parity: $("parity").value,
     stopbits: Number($("stopbits").value),
+    bytesize: Number($("bytesize").value),
     timeout: Number($("timeout").value),
     inter_frame_delay: Number($("gap").value),
     echo_guard: Number($("echo").value),
+    retries: Number($("retries").value),
     hub_name: $("hub").value.trim(),
-    auto_release_hub: $("auto").checked,
+    ha_not_using_port: $("haUnused").checked,
+    scan: {
+      address_from: Number($("scanFrom").value),
+      address_to: Number($("scanTo").value),
+      bauds: checkedValues($("scanBauds")).map(Number),
+      parities: checkedValues($("scanParities")),
+      probes: checkedValues($("scanProbes")).map(Number),
+    },
   };
 }
 
+function paintStatus(data) {
+  const port = data.port || {};
+  const hub = data.hub || {};
+  $("portState").textContent = port.exists ? "порт на месте" : "порт не найден";
+  $("portState").className = port.exists ? "pill ok" : "pill bad";
+  $("hubState").textContent = hub.label || "хаб";
+  $("hubState").className = hub.mode === "blocked" ? "pill bad" : "pill ok";
+  if (data.gap != null && data.settings) {
+    const gap = data.settings.inter_frame_delay;
+    $("gapInfo").textContent = gap > 0
+      ? `Пауза кадра: ${gap} с. Повторы без ответа: ${data.settings.retries}.`
+      : `Пауза кадра автоматически ${Number(data.gap).toFixed(4)} с. Повторы: ${data.settings.retries}.`;
+  }
+}
+
+function fillPorts(ports, selected) {
+  const paths = [];
+  const push = (path) => {
+    if (path && !paths.includes(path)) paths.push(path);
+  };
+  for (const item of ports || []) {
+    if (item.path.includes("/serial/by-id/") || item.path.includes("/ttyUSB")) push(item.path);
+  }
+  for (const item of ports || []) push(item.path);
+  push(selected);
+  $("device").innerHTML = paths.map((path) => `<option value="${esc(path)}">${esc(path)}</option>`).join("");
+  if (selected) $("device").value = selected;
+}
+
+function setChecks(root, values) {
+  const wanted = new Set((values || []).map(String));
+  root.querySelectorAll("input").forEach((node) => {
+    node.checked = wanted.has(node.value);
+  });
+}
+
 function fillSettings(state) {
-  const s = state.settings;
-  $("device").value = s.device;
-  $("baud").innerHTML = state.bauds.map((b) => `<option value="${b}">${b}</option>`).join("");
-  $("baud").value = String(s.baudrate);
-  $("parity").value = s.parity;
-  $("stopbits").value = String(s.stopbits);
-  $("timeout").value = s.timeout;
-  $("gap").value = s.inter_frame_delay;
-  $("echo").value = s.echo_guard;
-  $("hub").value = s.hub_name || "";
-  $("auto").checked = !!s.auto_release_hub;
-  $("yamlHub").value = s.hub_name || "";
-  $("gapInfo").textContent = s.inter_frame_delay > 0
-    ? `Пауза кадра: ${s.inter_frame_delay} с.`
-    : `Пауза кадра автоматически: ${Number(state.gap).toFixed(4)} с (не меньше 3.5 символа и 15 мс).`;
-  const list = $("ports");
-  const paths = new Set((state.ports || []).map((p) => p.path));
-  paths.add(s.device);
-  list.innerHTML = [...paths].map((p) => `<option value="${esc(p)}"></option>`).join("");
-  const baudBoxes = $("scanBauds");
-  if (!baudBoxes.childElementCount) {
-    baudBoxes.innerHTML = state.bauds.map((b) => (
-      `<label class="check"><input type="checkbox" value="${b}" ${b === s.baudrate ? "checked" : ""}>${b}</label>`
+  hydrating = true;
+  const settings = state.settings;
+  const scan = settings.scan || {};
+  $("baud").innerHTML = state.bauds.map((baud) => `<option value="${baud}">${baud}</option>`).join("");
+  $("baud").value = String(settings.baudrate);
+  $("parity").value = settings.parity;
+  $("stopbits").value = String(settings.stopbits);
+  $("bytesize").value = String(settings.bytesize || 8);
+  $("timeout").value = settings.timeout;
+  $("gap").value = settings.inter_frame_delay;
+  $("echo").value = settings.echo_guard;
+  $("retries").value = settings.retries || 0;
+  $("hub").value = settings.hub_name || "";
+  $("yamlHub").value = settings.hub_name || "";
+  $("haUnused").checked = !!settings.ha_not_using_port;
+  fillPorts(state.ports, settings.device);
+  if (!$("scanBauds").childElementCount) {
+    $("scanBauds").innerHTML = state.bauds.map((baud) => (
+      `<label class="check"><input type="checkbox" value="${baud}">${baud}</label>`
     )).join("");
   }
-  const hub = state.hub || {};
-  $("hubState").textContent = !s.hub_name
-    ? "хаб не задан"
-    : hub.released ? `хаб «${s.hub_name}» остановлен` : `хаб «${s.hub_name}»`;
+  $("scanFrom").value = scan.address_from || 1;
+  $("scanTo").value = scan.address_to || 255;
+  setChecks($("scanBauds"), scan.bauds || [settings.baudrate]);
+  setChecks($("scanParities"), scan.parities || [settings.parity]);
+  setChecks($("scanProbes"), scan.probes || [3, 1, 2]);
+  paintStatus(state);
   $("version").textContent = `версия ${state.version}`;
+  hydrating = false;
+}
+
+function scheduleSave() {
+  if (hydrating) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      paintStatus(await post("api/settings", collect()));
+    } catch (err) {
+      say(err.message, true);
+    }
+  }, 200);
 }
 
 function renderExchange(target, data) {
@@ -91,7 +153,7 @@ function renderExchange(target, data) {
   const parsed = data.parsed || {};
   let table = "";
   if (parsed.exception) {
-    table = `<p class="warn">Исключение ${esc(parsed.exception_code)}: ${esc(parsed.exception_text)}. Устройство на связи.</p>`;
+    table = `<p class="warn">Исключение ${esc(parsed.exception_code)}: ${esc(parsed.exception_text)}.</p>`;
   } else if (parsed.views) {
     const rows = parsed.views.map((view, index) => (
       `<tr><td>${index}</td><td>${view.dec}</td><td>${esc(view.hex)}</td><td>${view.signed}</td><td class="mono">${esc(view.bin)}</td></tr>`
@@ -124,23 +186,19 @@ function clearPreview() {
   $("confirm").hidden = true;
 }
 
-function selectedBauds() {
-  return [...$("scanBauds").querySelectorAll("input:checked")].map((node) => Number(node.value));
-}
-
 function renderScan(scan) {
   const total = scan.total || 0;
   const done = scan.done || 0;
   $("scanBar").style.width = total ? `${Math.round(100 * done / total)}%` : "0";
-  const cur = scan.current ? `сейчас ${scan.current.address} @ ${scan.current.baudrate}` : "";
+  const cur = scan.current ? `сейчас ${scan.current.address} @ ${scan.current.baudrate} ${scan.current.parity || ""}` : "";
   $("scanMeta").textContent = `${done} / ${total} ${cur} ${scan.error || ""}`.trim();
   $("scanBody").innerHTML = (scan.found || []).map((row) => {
     const how = row.exception
       ? `FC${String(row.fc).padStart(2, "0")} исключение ${row.exception_code}`
       : `FC${String(row.fc).padStart(2, "0")}`;
     return `<tr>
-      <td>${row.address}</td><td>${row.baudrate}</td><td>${esc(how)}</td>
-      <td><button type="button" data-use="${row.address}" data-baud="${row.baudrate}">В формы</button></td>
+      <td>${row.address}</td><td>${row.baudrate}</td><td>${esc(row.parity || "")}</td><td>${esc(how)}</td>
+      <td><button type="button" data-use="${row.address}" data-baud="${row.baudrate}" data-parity="${esc(row.parity || "")}">В формы</button></td>
     </tr>`;
   }).join("");
 }
@@ -158,22 +216,14 @@ async function pollScan() {
   }
 }
 
-function useAddress(address, baud) {
-  for (const id of ["readSlave", "writeSlave", "yamlAddr"]) $(id).value = address;
-  document.querySelectorAll("[data-slave]").forEach((node) => { node.value = address; });
-  if (baud) $("baud").value = String(baud);
-  say(`Адрес ${address} подставлен в формы. Скорость порта ${baud || "без изменений"} — сохраните её на вкладке «Порт», если меняли.`);
-}
-
 function renderProfiles() {
-  const yaml = $("yamlProfile");
-  yaml.innerHTML = profiles.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  $("yamlProfile").innerHTML = profiles.map((profile) => `<option value="${esc(profile.id)}">${esc(profile.name)}</option>`).join("");
   $("profileList").innerHTML = profiles.map((profile) => {
     const notes = (profile.notes || []).map((line) => `<li>${esc(line)}</li>`).join("");
-    const coils = (profile.points || []).filter((p) => p.kind === "coil").map((p) => (
-      `<span class="row">${esc(p.name)}
-        <button type="button" data-coil="${profile.id}" data-addr="${p.address}" data-on="1">Вкл</button>
-        <button type="button" data-coil="${profile.id}" data-addr="${p.address}" data-on="0">Выкл</button>
+    const coils = (profile.points || []).filter((point) => point.kind === "coil").map((point) => (
+      `<span class="row">${esc(point.name)}
+        <button type="button" data-coil="${profile.id}" data-addr="${point.address}" data-on="1">Вкл</button>
+        <button type="button" data-coil="${profile.id}" data-addr="${point.address}" data-on="0">Выкл</button>
       </span>`
     )).join("");
     const actions = (profile.actions || []).map((action) => {
@@ -203,7 +253,7 @@ function renderProfiles() {
         <label>Адрес на шине<input data-slave type="number" min="0" max="255" value="${defaults.address ?? 1}"></label>
       </div>
       <div class="row">
-        <button type="button" data-apply="${esc(profile.id)}">Подставить скорость профиля в порт</button>
+        <button type="button" data-apply="${esc(profile.id)}">Подставить скорость профиля</button>
       </div>
       <div class="row">${actions}</div>
       ${coils}
@@ -219,6 +269,15 @@ function profileSlave(card) {
 function actionValue(card, actionId) {
   const field = card.querySelector(`[data-for="${actionId}"]`);
   return field ? field.value : null;
+}
+
+function handleResult(target, data) {
+  if (data.preview) {
+    showPreview(data.preview);
+    say("Проверьте кадр и подтвердите запись.");
+    return;
+  }
+  renderExchange(target, data);
 }
 
 async function refreshLog() {
@@ -244,15 +303,11 @@ function writeFields() {
 
 function writeBody() {
   const fc = Number($("writeFc").value);
-  const body = {
-    fc,
-    slave: Number($("writeSlave").value),
-    address: Number($("writeAddr").value),
-  };
+  const body = { fc, slave: Number($("writeSlave").value), address: Number($("writeAddr").value) };
   if (fc === 5) body.on = $("writeOn").value === "1";
   else if (fc === 6) body.value = Number($("writeValue").value);
-  else if (fc === 15) body.coils = $("writeList").value.split(",").map((x) => Number(x.trim())).filter((x) => !Number.isNaN(x));
-  else body.values = $("writeList").value.split(",").map((x) => Number(x.trim())).filter((x) => !Number.isNaN(x));
+  else if (fc === 15) body.coils = $("writeList").value.split(",").map((item) => Number(item.trim())).filter((item) => !Number.isNaN(item));
+  else body.values = $("writeList").value.split(",").map((item) => Number(item.trim())).filter((item) => !Number.isNaN(item));
   return body;
 }
 
@@ -261,18 +316,22 @@ document.querySelector("nav").addEventListener("click", (event) => {
   if (!button) return;
   document.querySelectorAll("nav button").forEach((node) => node.classList.toggle("active", node === button));
   document.querySelectorAll("section.panel").forEach((node) => {
+    if (node.closest(".top") || node.id === "scanLive") return;
     node.hidden = node.id !== button.dataset.tab;
   });
   if (button.dataset.tab === "log") refreshLog().catch((err) => say(err.message, true));
 });
 
-$("savePort").addEventListener("click", async () => {
+$("conn").addEventListener("change", scheduleSave);
+$("conn").addEventListener("input", scheduleSave);
+$("scanBox").addEventListener("change", scheduleSave);
+$("scanBox").addEventListener("input", scheduleSave);
+
+$("btnPorts").addEventListener("click", async () => {
   try {
-    const data = await post("api/settings", settingsPayload());
-    $("gapInfo").textContent = data.settings.inter_frame_delay > 0
-      ? `Пауза кадра: ${data.settings.inter_frame_delay} с.`
-      : `Пауза кадра: ${Number(data.gap).toFixed(4)} с.`;
-    say("Настройки порта сохранены до перезапуска дополнения.");
+    const state = await api("api/state");
+    fillPorts(state.ports, $("device").value);
+    paintStatus(state);
   } catch (err) {
     say(err.message, true);
   }
@@ -281,9 +340,8 @@ $("savePort").addEventListener("click", async () => {
 $("btnRelease").addEventListener("click", async () => {
   try {
     await post("api/hub/release");
-    say("Хаб остановлен, порт должен освободиться.");
-    const state = await api("api/state");
-    fillSettings(state);
+    paintStatus(await api("api/state"));
+    say("Хаб остановлен. Пока не нажмёте «Вернуть хаб», stop/reload на каждую операцию не вызываются.");
   } catch (err) {
     say(err.message, true);
   }
@@ -291,11 +349,9 @@ $("btnRelease").addEventListener("click", async () => {
 
 $("btnRestore").addEventListener("click", async () => {
   try {
-    const data = await post("api/hub/restore");
-    const extra = data.result && data.result.fallback ? ` ${data.result.fallback}` : "";
-    say(`Хаб возвращён.${extra}`);
-    const state = await api("api/state");
-    fillSettings(state);
+    await post("api/hub/restore");
+    paintStatus(await api("api/state"));
+    say("Хаб перечитан через modbus.reload.");
   } catch (err) {
     say(err.message, true);
   }
@@ -304,16 +360,18 @@ $("btnRestore").addEventListener("click", async () => {
 $("scanFull").addEventListener("click", () => {
   $("scanFrom").value = 1;
   $("scanTo").value = 255;
+  scheduleSave();
 });
 
 $("scanStart").addEventListener("click", async () => {
   try {
     say("");
-    const data = await post("api/scan/start", {
-      address_from: Number($("scanFrom").value),
-      address_to: Number($("scanTo").value),
-      bauds: selectedBauds(),
-    });
+    const body = collect();
+    if (!body.scan.bauds.length || !body.scan.parities.length || !body.scan.probes.length) {
+      throw new Error("отметьте скорость, чётность и функцию опроса");
+    }
+    await post("api/settings", body);
+    const data = await post("api/scan/start", body.scan);
     renderScan(data.scan);
     if (scanTimer) clearInterval(scanTimer);
     scanTimer = setInterval(pollScan, 400);
@@ -322,12 +380,17 @@ $("scanStart").addEventListener("click", async () => {
   }
 });
 
-$("scanStop").addEventListener("click", () => post("api/scan/stop").catch((err) => say(err.message, true)));
+$("scanStop").addEventListener("click", () => post("api/scan/stop").then((data) => renderScan(data.scan)).catch((err) => say(err.message, true)));
 
 $("scanBody").addEventListener("click", (event) => {
   const button = event.target.closest("[data-use]");
   if (!button) return;
-  useAddress(button.dataset.use, button.dataset.baud);
+  for (const id of ["readSlave", "writeSlave", "yamlAddr"]) $(id).value = button.dataset.use;
+  document.querySelectorAll("[data-slave]").forEach((node) => { node.value = button.dataset.use; });
+  if (button.dataset.baud) $("baud").value = button.dataset.baud;
+  if (button.dataset.parity) $("parity").value = button.dataset.parity;
+  scheduleSave();
+  say(`Адрес ${button.dataset.use} подставлен в формы.`);
 });
 
 $("readFc").addEventListener("change", () => {
@@ -367,8 +430,7 @@ $("writePrep").addEventListener("click", async () => {
 $("hexGo").addEventListener("click", async () => {
   try {
     say("");
-    const data = await post("api/raw", { hex: $("hexIn").value, append_crc: $("hexCrc").checked });
-    renderExchange($("hexOut"), data);
+    handleResult($("hexOut"), await post("api/raw", { hex: $("hexIn").value, append_crc: $("hexCrc").checked }));
   } catch (err) {
     say(err.message, true);
   }
@@ -382,6 +444,8 @@ $("yamlGo").addEventListener("click", async () => {
       profile_id: $("yamlProfile").value,
       address: Number($("yamlAddr").value),
       hub: $("yamlHub").value.trim(),
+      full_hub: $("yamlFull").checked,
+      channels: Number($("yamlChannels").value),
     });
     $("yamlOut").value = data.yaml;
   } catch (err) {
@@ -390,9 +454,8 @@ $("yamlGo").addEventListener("click", async () => {
 });
 
 $("yamlCopy").addEventListener("click", async () => {
-  const text = $("yamlOut").value;
   try {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText($("yamlOut").value);
     say("Фрагмент скопирован.");
   } catch (err) {
     $("yamlOut").focus();
@@ -427,43 +490,38 @@ $("profileList").addEventListener("click", async (event) => {
       $("baud").value = String(defaults.baudrate || $("baud").value);
       $("parity").value = defaults.parity || "N";
       $("stopbits").value = String(defaults.stopbits || 1);
-      await post("api/settings", settingsPayload());
-      say(`Порт переключён на ${defaults.baudrate} ${defaults.parity || "N"}${defaults.stopbits || 1}. В устройство скорость не записывалась.`);
+      scheduleSave();
+      say(`Порт: ${defaults.baudrate} ${defaults.parity || "N"}${defaults.stopbits || 1}. В устройство это не записывается.`);
       return;
     }
     const run = event.target.closest("[data-run]");
     if (run) {
-      const data = await post("api/profile/run", {
+      handleResult(out, await post("api/profile/run", {
         profile_id: profile.id,
         action: run.dataset.action,
         slave: profileSlave(card),
-      });
-      renderExchange(out, data);
+      }));
       return;
     }
     const prep = event.target.closest("[data-prep]");
     if (prep) {
-      const data = await post("api/profile/run", {
+      handleResult(out, await post("api/profile/run", {
         profile_id: profile.id,
         action: prep.dataset.action,
         slave: profileSlave(card),
         value: Number(actionValue(card, prep.dataset.action)),
-      });
-      showPreview(data.preview);
-      say("Проверьте кадр и подтвердите запись.");
+      }));
       return;
     }
     const coil = event.target.closest("[data-coil]");
     if (coil) {
-      const data = await post("api/write/preview", {
+      handleResult(out, await post("api/write/preview", {
         fc: 5,
         slave: profileSlave(card),
         address: Number(coil.dataset.addr),
         on: coil.dataset.on === "1",
         profile_id: profile.id,
-      });
-      showPreview(data.preview);
-      say("Проверьте кадр и подтвердите запись.");
+      }));
     }
   } catch (err) {
     say(err.message, true);
@@ -471,12 +529,15 @@ $("profileList").addEventListener("click", async (event) => {
 });
 
 document.body.addEventListener("input", (event) => {
-  if (!previewToken || event.target.closest("#confirm")) return;
+  if (!previewToken || event.target.closest("#confirm") || event.target.closest("#conn") || event.target.closest("#scanBox")) return;
   clearPreview();
 });
 
 writeFields();
-api("api/state").then((state) => fillSettings(state)).catch((err) => say(err.message, true));
+api("api/state").then((state) => {
+  fillSettings(state);
+  if (state.scan) renderScan(state.scan);
+}).catch((err) => say(err.message, true));
 api("api/profiles").then((data) => {
   profiles = data.profiles || [];
   renderProfiles();
