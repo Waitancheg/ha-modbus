@@ -1,0 +1,33 @@
+configuration:
+  hub_name:
+    name: Имя хаба Modbus
+    description: >-
+      Имя из configuration.yaml (поле name у modbus). Перед операцией на шине
+      дополнение вызывает modbus.stop, после — modbus.restart.
+      Пустое значение — не трогать хаб.
+  device:
+    name: Последовательный порт
+    description: Например /dev/ttyUSB0 или /dev/serial/by-id/usb-…
+  baudrate:
+    name: Скорость
+    description: Скорость порта по умолчанию.
+  parity:
+    name: Чётность
+    description: N — без бита чётности, E — чёт, O — нечет.
+  stopbits:
+    name: Стоп-биты
+    description: Обычно 1 (8N1).
+  timeout:
+    name: Таймаут ответа, с
+    description: Сколько ждать ответ устройства.
+  inter_frame_delay:
+    name: Пауза между кадрами, с
+    description: 0 — пауза не меньше 3.5 символа и 15 мс (USB-UART часто рвёт более короткий кадр).
+  echo_guard:
+    name: Порог локального эха, с
+    description: >-
+      Копия запроса, пришедшая быстрее этого порога, считается эхом адаптера
+      и отбрасывается. 0 — не отличать эхо записи по времени.
+  auto_release_hub:
+    name: Освобождать хаб автоматически
+    description: Вызывать modbus.stop перед шиной и modbus.restart после неё.

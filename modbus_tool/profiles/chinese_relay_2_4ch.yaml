@@ -1,0 +1,238 @@
+id: chinese_relay_2_4ch
+name: Реле 2CH/4CH (Bestep/LC)
+subtitle: Типовой китайский модуль 7–24 В, RS485/TTL, адрес по умолчанию 255
+defaults:
+  address: 255
+  baudrate: 9600
+  parity: "N"
+  stopbits: 1
+notes:
+  - "Заводские параметры: адрес 255, 9600 8N1. Реле — катушки 0…7, запись FC05 (0xFF00 включить, 0x0000 выключить)."
+  - "Чтение реле: FC01, старт 0, количество 8. Входы: FC02, старт 0, количество 8. Количество 4 часто даёт таймаут."
+  - "Смена адреса — broadcast на slave 0: FC16, регистр 0x0000, одно значение (новый адрес). Пример для адреса 20: 00 10 00 00 00 01 02 00 14 + CRC."
+  - "Чтение адреса broadcast: 00 03 00 00 00 01 + CRC (готовый кадр 00 03 00 00 00 01 85 DB). Ответ может прийти без корректного CRC."
+  - "Скорость пишется FC16 в регистр 0x03E9 (1001): 2=4800, 3=9600, 4=19200."
+  - "Таймер: режим/время каналов 1…4 — регистры 0x0003/0x0004, 0x0008/0x0009, 0x000D/0x000E, 0x0012/0x0013. Режим 0x02 — автовключение по таймеру, 0x04 — автовыключение. Время в единицах 100 мс."
+points:
+  - name: Реле 1
+    kind: coil
+    address: 0
+    export: switch
+  - name: Реле 2
+    kind: coil
+    address: 1
+    export: switch
+  - name: Реле 3
+    kind: coil
+    address: 2
+    export: switch
+  - name: Реле 4
+    kind: coil
+    address: 3
+    export: switch
+  - name: Реле 5
+    kind: coil
+    address: 4
+    export: switch
+  - name: Реле 6
+    kind: coil
+    address: 5
+    export: switch
+  - name: Реле 7
+    kind: coil
+    address: 6
+    export: switch
+  - name: Реле 8
+    kind: coil
+    address: 7
+    export: switch
+  - name: Вход 1
+    kind: discrete
+    address: 0
+    export: binary_sensor
+    slave_count: 7
+  - name: Вход 2
+    kind: discrete
+    address: 1
+  - name: Вход 3
+    kind: discrete
+    address: 2
+  - name: Вход 4
+    kind: discrete
+    address: 3
+  - name: Вход 5
+    kind: discrete
+    address: 4
+  - name: Вход 6
+    kind: discrete
+    address: 5
+  - name: Вход 7
+    kind: discrete
+    address: 6
+  - name: Вход 8
+    kind: discrete
+    address: 7
+  - name: Реле 1 режим
+    kind: holding
+    address: 3
+    decode: uint16
+    export: sensor
+    enum:
+      2: "автовключение"
+      4: "автовыключение"
+  - name: Реле 1 время
+    kind: holding
+    address: 4
+    decode: uint16
+    unit: "×100 мс"
+    export: sensor
+  - name: Реле 2 режим
+    kind: holding
+    address: 8
+    decode: uint16
+    export: sensor
+  - name: Реле 2 время
+    kind: holding
+    address: 9
+    decode: uint16
+    unit: "×100 мс"
+    export: sensor
+  - name: Реле 3 режим
+    kind: holding
+    address: 13
+    decode: uint16
+    export: sensor
+  - name: Реле 3 время
+    kind: holding
+    address: 14
+    decode: uint16
+    unit: "×100 мс"
+    export: sensor
+  - name: Реле 4 режим
+    kind: holding
+    address: 18
+    decode: uint16
+    export: sensor
+  - name: Реле 4 время
+    kind: holding
+    address: 19
+    decode: uint16
+    unit: "×100 мс"
+    export: sensor
+  - name: Код скорости
+    kind: holding
+    address: 1001
+    decode: uint16
+    export: sensor
+    enum:
+      2: "4800"
+      3: "9600"
+      4: "19200"
+actions:
+  - id: read_relays
+    label: Прочитать реле (FC01, 8 катушек)
+    op: read
+    fc: 1
+    address: 0
+    quantity: 8
+  - id: read_inputs
+    label: Прочитать входы (FC02, количество 8)
+    op: read
+    fc: 2
+    address: 0
+    quantity: 8
+  - id: read_timers
+    label: Прочитать таймеры (FC03, регистры 0–19)
+    op: read
+    fc: 3
+    address: 0
+    quantity: 20
+  - id: read_address
+    label: Прочитать адрес (broadcast)
+    op: raw
+    hex: "00 03 00 00 00 01"
+    append_crc: true
+  - id: set_address
+    label: Задать адрес (broadcast FC16, регистр 0)
+    op: broadcast_address
+    input: uint
+    min: 1
+    max: 255
+  - id: set_baud
+    label: Задать скорость (FC16, регистр 1001 / 0x03E9)
+    op: write
+    fc: 16
+    address: 1001
+    input: enum
+    enum:
+      2: "4800"
+      3: "9600"
+      4: "19200"
+  - id: mode_ch1
+    label: Режим таймера, реле 1 (рег. 3)
+    op: write
+    fc: 6
+    address: 3
+    input: enum
+    enum:
+      2: "автовключение (0x02)"
+      4: "автовыключение (0x04)"
+  - id: time_ch1
+    label: Время таймера, реле 1 (рег. 4, ×100 мс)
+    op: write
+    fc: 6
+    address: 4
+    input: uint
+    min: 0
+    max: 65535
+  - id: mode_ch2
+    label: Режим таймера, реле 2 (рег. 8)
+    op: write
+    fc: 6
+    address: 8
+    input: enum
+    enum:
+      2: "автовключение (0x02)"
+      4: "автовыключение (0x04)"
+  - id: time_ch2
+    label: Время таймера, реле 2 (рег. 9, ×100 мс)
+    op: write
+    fc: 6
+    address: 9
+    input: uint
+    min: 0
+    max: 65535
+  - id: mode_ch3
+    label: Режим таймера, реле 3 (рег. 13)
+    op: write
+    fc: 6
+    address: 13
+    input: enum
+    enum:
+      2: "автовключение (0x02)"
+      4: "автовыключение (0x04)"
+  - id: time_ch3
+    label: Время таймера, реле 3 (рег. 14, ×100 мс)
+    op: write
+    fc: 6
+    address: 14
+    input: uint
+    min: 0
+    max: 65535
+  - id: mode_ch4
+    label: Режим таймера, реле 4 (рег. 18)
+    op: write
+    fc: 6
+    address: 18
+    input: enum
+    enum:
+      2: "автовключение (0x02)"
+      4: "автовыключение (0x04)"
+  - id: time_ch4
+    label: Время таймера, реле 4 (рег. 19, ×100 мс)
+    op: write
+    fc: 6
+    address: 19
+    input: uint
+    min: 0
+    max: 65535
