@@ -12,17 +12,102 @@
       <h1>Modbus RTU</h1>
       <p id="version" class="muted"></p>
     </div>
-    <div class="hub">
-      <span id="hubState" class="pill">хаб не выбран</span>
-      <button type="button" id="btnRelease">Освободить хаб HA</button>
-      <button type="button" id="btnRestore" class="primary">Вернуть хаб HA</button>
+    <div class="status-row">
+      <span id="portState" class="pill">порт</span>
+      <span id="hubState" class="pill">хаб</span>
     </div>
   </header>
   <p id="msg" class="msg" hidden></p>
+
+  <div class="top">
+    <section class="panel" id="conn">
+      <h2>Порт</h2>
+      <div class="grid">
+        <label>Устройство
+          <select id="device"></select>
+        </label>
+        <label>Скорость
+          <select id="baud"></select>
+        </label>
+        <label>Чётность
+          <select id="parity">
+            <option value="N">N</option>
+            <option value="E">E</option>
+            <option value="O">O</option>
+          </select>
+        </label>
+        <label>Стоп-биты
+          <select id="stopbits"><option>1</option><option>2</option></select>
+        </label>
+        <label>Биты данных
+          <select id="bytesize"><option>8</option><option>7</option><option>6</option><option>5</option></select>
+        </label>
+        <label>Таймаут, с
+          <input id="timeout" type="number" min="0.05" max="10" step="0.05">
+        </label>
+        <label>Пауза кадра, с
+          <input id="gap" type="number" min="0" max="2" step="0.001">
+        </label>
+        <label>Повторы
+          <input id="retries" type="number" min="0" max="5" step="1">
+        </label>
+        <label>Порог эха, с
+          <input id="echo" type="number" min="0" max="0.2" step="0.001">
+        </label>
+        <label>Имя хаба HA
+          <input id="hub" placeholder="modbus_hub" spellcheck="false">
+        </label>
+      </div>
+      <label class="check"><input id="haUnused" type="checkbox"> HA не использует этот порт</label>
+      <p id="gapInfo" class="muted"></p>
+      <div class="row">
+        <button type="button" id="btnRelease">Освободить хаб</button>
+        <button type="button" id="btnRestore" class="primary">Вернуть хаб</button>
+        <button type="button" id="btnPorts" class="ghost">Обновить порты</button>
+      </div>
+    </section>
+
+    <section class="panel" id="scanBox">
+      <h2>Скан</h2>
+      <div class="grid">
+        <label>Адрес с<input id="scanFrom" type="number" min="1" max="255" value="1"></label>
+        <label>Адрес по<input id="scanTo" type="number" min="1" max="255" value="255"></label>
+      </div>
+      <p class="muted">Скорости</p>
+      <div id="scanBauds" class="checks"></div>
+      <p class="muted">Чётность на время скана</p>
+      <div id="scanParities" class="checks">
+        <label class="check"><input type="checkbox" value="N" checked>N</label>
+        <label class="check"><input type="checkbox" value="E">E</label>
+        <label class="check"><input type="checkbox" value="O">O</label>
+      </div>
+      <p class="muted">Опрос, только чтение</p>
+      <div id="scanProbes" class="checks">
+        <label class="check"><input type="checkbox" value="3" checked>FC03</label>
+        <label class="check"><input type="checkbox" value="1" checked>FC01</label>
+        <label class="check"><input type="checkbox" value="2" checked>FC02</label>
+      </div>
+      <div class="row">
+        <button type="button" id="scanStart" class="primary">Сканировать</button>
+        <button type="button" id="scanStop">Стоп</button>
+        <button type="button" id="scanFull" class="ghost">1–255</button>
+      </div>
+      <div class="bar"><div id="scanBar"></div></div>
+      <p id="scanMeta" class="muted"></p>
+    </section>
+  </div>
+
+  <section class="panel" id="scanLive">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Адрес</th><th>Скорость</th><th>Чётность</th><th>Ответ</th><th></th></tr></thead>
+        <tbody id="scanBody"></tbody>
+      </table>
+    </div>
+  </section>
+
   <nav>
-    <button type="button" data-tab="port" class="active">Порт</button>
-    <button type="button" data-tab="scan">Скан</button>
-    <button type="button" data-tab="read">Чтение</button>
+    <button type="button" data-tab="read" class="active">Чтение</button>
     <button type="button" data-tab="write">Запись</button>
     <button type="button" data-tab="hex">HEX</button>
     <button type="button" data-tab="log">Журнал</button>
@@ -30,57 +115,7 @@
     <button type="button" data-tab="yaml">YAML</button>
   </nav>
 
-  <section id="port" class="panel">
-    <h2>Порт</h2>
-    <p class="muted">Скорость здесь — это порт адаптера, а не запись в устройство. Путь можно выбрать из списка или вписать <code>/dev/serial/by-id/…</code>.</p>
-    <div class="grid">
-      <label>Устройство<input id="device" list="ports" spellcheck="false"></label>
-      <datalist id="ports"></datalist>
-      <label>Скорость<select id="baud"></select></label>
-      <label>Чётность
-        <select id="parity">
-          <option value="N">N — нет</option>
-          <option value="E">E — чёт</option>
-          <option value="O">O — нечет</option>
-        </select>
-      </label>
-      <label>Стоп-биты
-        <select id="stopbits"><option>1</option><option>2</option></select>
-      </label>
-      <label>Таймаут ответа, с<input id="timeout" type="number" min="0.05" max="10" step="0.05"></label>
-      <label>Пауза между кадрами, с<input id="gap" type="number" min="0" max="2" step="0.001"></label>
-      <label>Порог эха, с<input id="echo" type="number" min="0" max="0.2" step="0.001"></label>
-      <label>Имя хаба HA<input id="hub" placeholder="modbus_hub"></label>
-    </div>
-    <label class="check"><input id="auto" type="checkbox"> Перед шиной вызывать modbus.stop, после — modbus.restart</label>
-    <p id="gapInfo" class="muted"></p>
-    <button type="button" id="savePort" class="primary">Сохранить настройки</button>
-  </section>
-
-  <section id="scan" class="panel" hidden>
-    <h2>Сканирование</h2>
-    <p class="muted">Только чтение: FC03 регистр 0, затем FC01 и FC02 по 8 бит. Ответ-исключение тоже считается «устройство есть». Адрес 255 входит в диапазон. Записей на шину нет. Кнопка «В формы» подставляет найденный адрес.</p>
-    <div class="grid">
-      <label>Адрес с<input id="scanFrom" type="number" min="1" max="255" value="1"></label>
-      <label>Адрес по<input id="scanTo" type="number" min="1" max="255" value="255"></label>
-    </div>
-    <div id="scanBauds" class="checks"></div>
-    <div class="row">
-      <button type="button" id="scanStart" class="primary">Сканировать</button>
-      <button type="button" id="scanStop">Остановить</button>
-      <button type="button" id="scanFull" class="ghost">Диапазон 1–255</button>
-    </div>
-    <div class="bar"><div id="scanBar"></div></div>
-    <p id="scanMeta" class="muted"></p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Адрес</th><th>Скорость</th><th>Ответ</th><th></th></tr></thead>
-        <tbody id="scanBody"></tbody>
-      </table>
-    </div>
-  </section>
-
-  <section id="read" class="panel" hidden>
+  <section id="read" class="panel">
     <h2>Чтение</h2>
     <div class="grid">
       <label>Устройство<input id="readSlave" type="number" min="0" max="255" value="1"></label>
@@ -101,7 +136,7 @@
 
   <section id="write" class="panel" hidden>
     <h2>Запись</h2>
-    <p class="muted">Сначала готовится кадр. На шину он уходит только после подтверждения.</p>
+    <p class="muted">На шину кадр уходит только после подтверждения.</p>
     <div class="grid">
       <label>Устройство<input id="writeSlave" type="number" min="0" max="255" value="1"></label>
       <label>Функция
@@ -121,7 +156,7 @@
 
   <section id="hex" class="panel" hidden>
     <h2>Сырой HEX</h2>
-    <p class="muted">Для нестандартных плат и broadcast-адреса 0. CRC16 дописывается сам, если галочка включена.</p>
+    <p class="muted">Чтение (FC01–04, адрес не 0) уходит сразу. Запись и broadcast сначала показывают кадр.</p>
     <textarea id="hexIn" rows="3" spellcheck="false" placeholder="00 03 00 00 00 01"></textarea>
     <label class="check"><input id="hexCrc" type="checkbox" checked> Добавить CRC16</label>
     <button type="button" id="hexGo" class="primary">Отправить</button>
@@ -146,12 +181,20 @@
 
   <section id="yaml" class="panel" hidden>
     <h2>YAML для Home Assistant</h2>
-    <p class="muted">Фрагмент для <code>configuration.yaml</code>. Его нужно вставить вручную и перезагрузить интеграцию modbus. Пока дополнение держит порт, хаб HA должен быть остановлен.</p>
+    <p class="muted">По умолчанию только списки сущностей — их вставляют в уже существующий хаб. Полный блок включает <code>modbus:</code>.</p>
     <div class="grid">
       <label>Профиль<select id="yamlProfile"></select></label>
       <label>Адрес устройства<input id="yamlAddr" type="number" min="0" max="255" value="1"></label>
       <label>Имя хаба<input id="yamlHub" placeholder="modbus_hub"></label>
+      <label>Каналы реле
+        <select id="yamlChannels">
+          <option value="2">2</option>
+          <option value="4" selected>4</option>
+          <option value="8">8</option>
+        </select>
+      </label>
     </div>
+    <label class="check"><input id="yamlFull" type="checkbox"> Полный блок хаба</label>
     <button type="button" id="yamlGo" class="primary">Собрать фрагмент</button>
     <textarea id="yamlOut" rows="16" readonly></textarea>
     <button type="button" id="yamlCopy">Копировать</button>
@@ -165,7 +208,7 @@
       <button type="button" id="confirmGo" class="danger">Подтвердить запись</button>
       <button type="button" id="confirmNo">Отмена</button>
     </div>
-  </section>
+  </div>
   <script src="static/app.js"></script>
 </body>
 </html>

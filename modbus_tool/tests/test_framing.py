@@ -135,6 +135,7 @@ class FramingTests(unittest.TestCase):
             "parity": "N",
             "stopbits": 1,
             "address": 4,
+            "full_hub": True,
         })
         self.assertIn("device_address: 4", text)
         self.assertIn("nan_value: 32768", text)
@@ -154,6 +155,16 @@ class FramingTests(unittest.TestCase):
         self.assertIn("slave_count: 7", relay)
         self.assertIn("input_type: discrete_input", relay)
         self.assertIn("device_address: 255", relay)
+        narrow = generate_yaml(profiles["chinese_relay_2_4ch"], {
+            "address": 255,
+            "channels": 2,
+            "full_hub": False,
+        })
+        self.assertNotIn("\nmodbus:", "\n" + narrow)
+        self.assertIn("slave_count: 1", narrow)
+        self.assertIn('name: "Реле 1"', narrow)
+        self.assertNotIn('name: "Реле 5"', narrow)
+        self.assertNotIn('name: "Реле 3 режим"', narrow)
 
 
 if __name__ == "__main__":

@@ -103,6 +103,44 @@ class EchoTests(unittest.TestCase):
         self.assertEqual(parsed["frame"], resp)
         self.assertEqual(parsed["parsed"]["registers"], [10])
 
+    def test_fast_unrelated_bytes_are_not_echo(self):
+        sent = build_read(1, 3, 0, 1)
+        other = _read_response(1, 1)
+        parsed = extract_response(sent, other, first_byte_delay=0.0001, echo_guard=0.005)
+        self.assertFalse(parsed["echo"])
+        self.assertEqual(parsed["frame"], other)
+
+    def test_close_releases_exclusive_lock(self):
+        import fcntl
+        import termios
+        from app import serial_port as serial_mod
+
+        master, slave = pty.openpty()
+        calls = []
+        real = serial_mod.fcntl.ioctl
+
+        def spy(fd, request, *args):
+            if request == termios.TIOCNXCL:
+                os.fstat(fd)
+            calls.append(request)
+            return real(fd, request, *args)
+
+        serial_mod.fcntl.ioctl = spy
+        port = SerialPort()
+        try:
+            port.configure(os.ttyname(slave), 9600, "N", 1)
+            port.close()
+        finally:
+            serial_mod.fcntl.ioctl = real
+            os.close(master)
+            try:
+                os.close(slave)
+            except OSError:
+                pass
+        self.assertIn(termios.TIOCEXCL, calls)
+        self.assertIn(termios.TIOCNXCL, calls)
+        self.assertLess(calls.index(termios.TIOCEXCL), calls.index(termios.TIOCNXCL))
+
     def test_noise_after_echo_is_absent(self):
         def transact(frame):
             return extract_response(frame, frame + b"\x01\x02\x03", 0.0002, 0.005)

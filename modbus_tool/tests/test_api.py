@@ -40,9 +40,10 @@ class ApiTests(unittest.TestCase):
     def test_health_profiles_and_page(self):
         status, health = self._call("GET", "/health")
         self.assertEqual(status, 200)
-        self.assertEqual(health["version"], "0.1.0")
+        self.assertEqual(health["version"], "0.2.0")
         status, page = 200, urllib.request.urlopen(f"http://127.0.0.1:{self.port}/").read().decode()
-        self.assertIn("Сканирование", page)
+        self.assertIn("Сканировать", page)
+        self.assertIn("Освободить хаб", page)
         status, profiles = self._call("GET", "/api/profiles")
         self.assertEqual(status, 200)
         self.assertEqual(len(profiles["profiles"]), 3)
@@ -84,14 +85,43 @@ class ApiTests(unittest.TestCase):
         self.assertIn("device_class: temperature", yaml_body["yaml"])
 
     def test_missing_port_is_an_error_not_a_write(self):
-        previous = APP.settings["device"]
+        previous = dict(APP.settings)
         APP.settings["device"] = "/dev/ttyUSB-modbus-tool-missing"
+        APP.settings["ha_not_using_port"] = True
         try:
             status, body = self._call("POST", "/api/read", {"slave": 1, "fc": 3, "address": 0, "quantity": 1})
         finally:
-            APP.settings["device"] = previous
+            APP.settings.clear()
+            APP.settings.update(previous)
         self.assertEqual(status, 400)
         self.assertIn("не найдено", body["error"])
+
+    def test_empty_hub_blocks_the_bus(self):
+        previous = dict(APP.settings)
+        APP.settings["hub_name"] = ""
+        APP.settings["ha_not_using_port"] = False
+        try:
+            status, body = self._call("POST", "/api/read", {"slave": 1, "fc": 3, "address": 0, "quantity": 1})
+        finally:
+            APP.settings.clear()
+            APP.settings.update(previous)
+        self.assertEqual(status, 400)
+        self.assertIn("HA не использует", body["error"])
+
+    def test_raw_write_and_broadcast_need_confirmation(self):
+        status, read = self._call("POST", "/api/raw", {"hex": "01 03 00 00 00 01", "append_crc": True})
+        self.assertEqual(status, 400)
+        self.assertNotIn("preview", read)
+        status, write = self._call("POST", "/api/raw", {"hex": "FF 05 00 00 FF 00", "append_crc": True})
+        self.assertEqual(status, 200)
+        self.assertTrue(write["preview"]["hex"].startswith("ff 05 00 00 ff 00"))
+        status, broadcast = self._call("POST", "/api/raw", {"hex": "00 10 00 00 00 01 02 00 14", "append_crc": True})
+        self.assertEqual(status, 200)
+        self.assertIn("token", broadcast["preview"])
+        self.assertTrue(broadcast["preview"]["hex"].startswith("00 10 00 00 00 01 02 00 14"))
+        status, denied = self._call("POST", "/api/write/commit", {"token": write["preview"]["token"]})
+        self.assertEqual(status, 400)
+        self.assertIn("HA не использует", denied["error"])
 
 
 if __name__ == "__main__":

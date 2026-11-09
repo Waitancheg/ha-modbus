@@ -1,5 +1,5 @@
 name: Modbus RTU Tool
-version: "0.1.0"
+version: "0.2.0"
 slug: modbus_tool
 description: >-
   Сканирование и настройка устройств Modbus RTU на шине RS485
@@ -8,9 +8,7 @@ url: https://github.com/Waitancheg/ha-modbus/tree/main/modbus_tool
 arch:
   - aarch64
   - amd64
-  - armhf
   - armv7
-  - i386
 startup: application
 boot: manual
 uart: true
@@ -34,17 +32,17 @@ options:
   baudrate: 9600
   parity: "N"
   stopbits: 1
+  bytesize: 8
   timeout: 0.25
   inter_frame_delay: 0
-  echo_guard: 0.005
-  auto_release_hub: true
+  retries: 0
 schema:
   hub_name: str
   device: str
   baudrate: "list(1200|2400|4800|9600|19200|38400|57600|115200)"
   parity: "list(N|E|O)"
   stopbits: "list(1|2)"
+  bytesize: "list(5|6|7|8)"
   timeout: "float(0.05,10)"
   inter_frame_delay: "float(0,2)"
-  echo_guard: "float(0,0.2)"
-  auto_release_hub: bool
+  retries: "int(0,5)"

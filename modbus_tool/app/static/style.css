@@ -57,12 +57,25 @@ nav button.active { background: var(--accent); color: var(--accent-ink); border-
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 button.danger { background: var(--danger); color: white; border-color: transparent; }
 button.ghost { background: transparent; }
+.top {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.2fr) minmax(240px, 0.9fr);
+  gap: 12px;
+  align-items: start;
+}
 .panel {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px;
   box-shadow: var(--shadow);
+  margin-bottom: 12px;
+}
+.status-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pill.ok { color: var(--ok); border-color: var(--ok); }
+.pill.bad { color: var(--danger); border-color: var(--danger); }
+@media (max-width: 860px) {
+  .top { grid-template-columns: 1fr; }
 }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 0.92rem; }

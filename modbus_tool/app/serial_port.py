@@ -46,15 +46,25 @@ class SerialPort:
     def open(self) -> bool:
         return self.fd is not None
 
-    def close(self) -> None:
-        if self.fd is not None:
+    def _release_exclusive(self, fd: int) -> None:
+        if fcntl is not None and hasattr(termios, "TIOCNXCL"):
             try:
-                os.close(self.fd)
+                fcntl.ioctl(fd, termios.TIOCNXCL)
             except OSError:
                 pass
-            self.fd = None
 
-    def configure(self, path: str, baud: int, parity: str, stopbits: int) -> None:
+    def close(self) -> None:
+        fd = self.fd
+        if fd is None:
+            return
+        self.fd = None
+        self._release_exclusive(fd)
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def configure(self, path: str, baud: int, parity: str, stopbits: int, bytesize: int = 8) -> None:
         baud = int(baud)
         if baud not in BAUD_MAP:
             raise SerialError(f"неподдерживаемая скорость {baud}")
@@ -64,6 +74,10 @@ class SerialPort:
         stopbits = int(stopbits)
         if stopbits not in (1, 2):
             raise SerialError("стоп-биты: 1 или 2")
+        bytesize = int(bytesize)
+        sizes = {5: termios.CS5, 6: termios.CS6, 7: termios.CS7, 8: termios.CS8}
+        if bytesize not in sizes:
+            raise SerialError("биты данных: 5, 6, 7 или 8")
         self.close()
         try:
             fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
@@ -92,7 +106,7 @@ class SerialPort:
                 | termios.CSTOPB
                 | getattr(termios, "CRTSCTS", 0)
             )
-            cflag |= termios.CS8 | termios.CREAD | termios.CLOCAL
+            cflag |= sizes[bytesize] | termios.CREAD | termios.CLOCAL
             if parity == "E":
                 cflag |= termios.PARENB
             elif parity == "O":
@@ -114,6 +128,7 @@ class SerialPort:
                 except OSError:
                     pass
         except Exception:
+            self._release_exclusive(fd)
             os.close(fd)
             raise
         self.fd = fd
