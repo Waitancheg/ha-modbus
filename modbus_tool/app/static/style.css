@@ -1,0 +1,123 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f3f0e8;
+  --ink: #1d1a16;
+  --muted: #5e584e;
+  --card: #fffdf8;
+  --line: #e2dacb;
+  --accent: #0d6b52;
+  --accent-ink: #fff;
+  --danger: #8d2a2a;
+  --ok: #0d6b52;
+  --warn: #8a5a10;
+  --shadow: 0 1px 2px rgba(40, 30, 10, 0.06);
+  font-family: "Segoe UI", "PT Sans", "Noto Sans", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14181b;
+    --ink: #ece6dc;
+    --muted: #b3aa9d;
+    --card: #1e2428;
+    --line: #343c42;
+    --accent: #3dbe9d;
+    --accent-ink: #06241b;
+    --danger: #ff8d86;
+    --ok: #3dbe9d;
+    --warn: #e6b15c;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto;
+  max-width: 980px;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.45;
+}
+header { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; }
+h1 { font-size: 1.45rem; margin: 0; }
+h2 { font-size: 1.15rem; margin: 0 0 8px; }
+h3 { font-size: 1rem; margin: 0 0 6px; }
+.muted, header p { color: var(--muted); margin: 2px 0 0; }
+.hub { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+nav { display: flex; gap: 6px; overflow-x: auto; padding: 12px 0; }
+nav button, button {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-height: 40px;
+  cursor: pointer;
+}
+nav button.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+button.danger { background: var(--danger); color: white; border-color: transparent; }
+button.ghost { background: transparent; }
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 0.92rem; }
+label.check { flex-direction: row; align-items: center; gap: 8px; margin: 10px 0; }
+input, select, textarea {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 40px;
+}
+input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+textarea { font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace; min-height: 72px; }
+.row, .checks { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.msg { padding: 10px 12px; border-radius: 8px; background: #f3e2c2; color: #3d2b08; }
+@media (prefers-color-scheme: dark) {
+  .msg { background: #3a311c; color: #f0d7a2; }
+}
+.msg.error { background: #f6d4d4; color: #5c1212; }
+@media (prefers-color-scheme: dark) {
+  .msg.error { background: #4a2222; color: #ffd0d0; }
+}
+.pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 0.85rem; }
+.bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+#scanBar { height: 100%; width: 0; background: var(--accent); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 6px 8px; vertical-align: top; }
+code, .mono { font-family: ui-monospace, "Cascadia Code", monospace; word-break: break-all; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 10px 0; }
+.card ul { margin: 6px 0 0; padding-left: 18px; }
+.confirm {
+  position: sticky;
+  bottom: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--danger);
+  background: var(--card);
+}
+.out { margin-top: 10px; }
+.warn { color: var(--warn); }
+@media (max-width: 640px) {
+  body { padding: 10px; }
+  header { align-items: stretch; }
+  .hub { width: 100%; }
+  .hub button { flex: 1; }
+}

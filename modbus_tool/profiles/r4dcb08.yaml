@@ -1,0 +1,99 @@
+id: r4dcb08
+name: R4DCB08
+subtitle: 8 каналов температуры, holding-регистры 0…7
+defaults:
+  address: 1
+  baudrate: 9600
+  parity: "N"
+  stopbits: 1
+notes:
+  - "Температуры в holding-регистрах 0…7, int16, множитель 0.1 °C."
+  - "Адрес устройства уточните сканером: у разных партий он отличается."
+points:
+  - name: Температура 1
+    kind: holding
+    address: 0
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+  - name: Температура 2
+    kind: holding
+    address: 1
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+  - name: Температура 3
+    kind: holding
+    address: 2
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+  - name: Температура 4
+    kind: holding
+    address: 3
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+  - name: Температура 5
+    kind: holding
+    address: 4
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+  - name: Температура 6
+    kind: holding
+    address: 5
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+  - name: Температура 7
+    kind: holding
+    address: 6
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+  - name: Температура 8
+    kind: holding
+    address: 7
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+actions:
+  - id: read_temps
+    label: Прочитать 8 температур
+    op: read
+    fc: 3
+    address: 0
+    quantity: 8

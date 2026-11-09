@@ -1,0 +1,86 @@
+id: eletechsup_n4dsa02
+name: Eletechsup N4DSA02
+subtitle: 2 канала DS18B20, RS485 Modbus RTU
+defaults:
+  address: 1
+  baudrate: 9600
+  parity: "N"
+  stopbits: 1
+notes:
+  - "Holding-регистры 0 и 1 — температуры, int16, множитель 0.1 °C. Значение 32768 означает, что датчика нет."
+  - "Регистр 2 — адрес устройства, регистр 3 — код скорости. Запись FC06."
+  - "Код скорости: 0=1200, 1=2400, 2=4800, 3=9600, 4=19200. Новая скорость применяется только после отключения питания."
+  - "Не записывайте 5 в регистр скорости: это сброс к заводским настройкам."
+  - "Регистр 255 не является регистром скорости."
+points:
+  - name: Температура 1
+    kind: holding
+    address: 0
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    invalid: 32768
+    invalid_text: "нет датчика"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+  - name: Температура 2
+    kind: holding
+    address: 1
+    decode: int16
+    scale: 0.1
+    precision: 1
+    unit: "°C"
+    invalid: 32768
+    invalid_text: "нет датчика"
+    export: sensor
+    device_class: temperature
+    state_class: measurement
+  - name: Адрес устройства
+    kind: holding
+    address: 2
+    decode: uint16
+    export: sensor
+  - name: Код скорости
+    kind: holding
+    address: 3
+    decode: uint16
+    export: sensor
+    forbid: [5]
+    forbid_text: "Значение 5 — заводской сброс. Запись отклонена."
+    enum:
+      0: "1200"
+      1: "2400"
+      2: "4800"
+      3: "9600"
+      4: "19200"
+actions:
+  - id: read_main
+    label: Прочитать регистры 0–3
+    op: read
+    fc: 3
+    address: 0
+    quantity: 4
+  - id: set_address
+    label: Записать адрес (FC06, регистр 2)
+    op: write
+    fc: 6
+    address: 2
+    input: uint
+    min: 1
+    max: 247
+  - id: set_baud
+    label: Записать код скорости (FC06, регистр 3)
+    op: write
+    fc: 6
+    address: 3
+    input: enum
+    forbid: [5]
+    forbid_text: "Значение 5 — заводской сброс. Запись отклонена."
+    enum:
+      0: "1200"
+      1: "2400"
+      2: "4800"
+      3: "9600"
+      4: "19200"
